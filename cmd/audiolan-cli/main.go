@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/gordonklaus/portaudio"
 	"github.com/penguinpowernz/audiolan"
 )
 
@@ -19,6 +20,9 @@ func main() {
 		log.Println("must use as client or server")
 		os.Exit(1)
 	}
+
+	portaudio.Initialize()
+	defer portaudio.Terminate()
 
 	if addr != "" {
 		client := audiolan.NewClient()

@@ -2,13 +2,17 @@ package audiolan
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"strconv"
 	"time"
+
+	"github.com/gordonklaus/portaudio"
 )
+
+const SampleRate = 44100
 
 type AudioStream struct {
 	ip           string
@@ -18,11 +22,10 @@ type AudioStream struct {
 	conn         *net.UDPConn
 	ctx          context.Context
 	streaming    bool
-	rdr          io.Reader
 	errorTracker *rateTrack
 }
 
-func NewAudioStream(ip string, r io.Reader) (*AudioStream, error) {
+func NewAudioStream(ip string) (*AudioStream, error) {
 	addr := ip + ":" + strconv.Itoa(ClientRxPort)
 
 	log.Println("transmitting audio to", addr)
@@ -46,7 +49,6 @@ func NewAudioStream(ip string, r io.Reader) (*AudioStream, error) {
 	strm.connectedAt = time.Now()
 	strm.ip = ip
 	strm.errorTracker = newRateTrack(5, 10*time.Second)
-	strm.rdr = r
 
 	strm.ctx, strm.cancel = context.WithCancel(context.Background())
 
@@ -62,6 +64,20 @@ func (strm *AudioStream) ConnectedSecs() float64 {
 }
 
 func (strm *AudioStream) Start() {
+
+	buffer := make([]float32, SampleRate*1)
+	stream, err := portaudio.OpenDefaultStream(1, 0, SampleRate, len(buffer), func(in []float32) {
+		for i := range buffer {
+			buffer[i] = in[i]
+		}
+	})
+
+	if err != nil {
+		panic(err)
+	}
+	stream.Start()
+	defer stream.Close()
+
 	defer strm.conn.Close()
 	strm.streaming = true
 	for {
@@ -72,19 +88,18 @@ func (strm *AudioStream) Start() {
 			return
 		default:
 			time.Sleep(time.Second / 5)
-			buf := make([]byte, 44100)
-			rn, _ := strm.rdr.Read(buf)
-			fmt.Println("read bytes", rn, string(buf[:rn]))
-			n, err := strm.conn.Write(buf)
-			strm.bytesTx += n
+
+			err := binary.Write(strm.conn, binary.BigEndian, buffer)
 			if err != nil {
-				fmt.Println(string(buf), err)
+				fmt.Println(len(buffer), err)
 				if !strm.errorTracker.Add() {
 					log.Println("too many errors, client is gone")
 					strm.Stop()
 				}
 				continue
 			}
+
+			strm.bytesTx += len(buffer)
 		}
 	}
 }

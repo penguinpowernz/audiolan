@@ -2,7 +2,6 @@ package audiolan
 
 import (
 	"context"
-	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -15,14 +14,12 @@ type Server struct {
 	running bool
 	streams map[string]*AudioStream
 	api     *http.Server
-	rdr     io.Reader
 }
 
 func NewServer() *Server {
-	return &Server{streams: map[string]*AudioStream{}, rdr: &MockReader{}}
+	return &Server{streams: map[string]*AudioStream{}}
 }
 
-func (svr *Server) AttachReader(r io.Reader)            { svr.rdr = r }
 func (svr *Server) GetStreamFor(ip string) *AudioStream { return svr.streams[ip] }
 
 func (svr *Server) IsListening() bool { return svr.running }
@@ -50,7 +47,7 @@ func (svr *Server) StartAPI(addr string) {
 			strm.Stop()
 		}
 
-		strm, err := NewAudioStream(ip, svr.rdr)
+		strm, err := NewAudioStream(ip)
 		if err != nil {
 			c.AbortWithError(500, err)
 			return
