@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
+	"reflect"
 	"time"
 
 	"github.com/gordonklaus/portaudio"
@@ -47,14 +48,63 @@ func (strm *AudioStream) ConnectedSecs() float64 {
 	return time.Since(strm.connectedAt).Seconds()
 }
 
+func Equal(a, b []float32) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func (strm *AudioStream) sendData(in []float32) {
+	buffer := make([]float32, SampleRate*1)
+	count := 0
+	for i := range buffer {
+		buffer[i] = in[i]
+		if buffer[i] == 0 {
+			count++
+		}
+	}
+	log.Println(count, " are zeros")
+
+	buf := bytes.NewBuffer(make([]byte, SampleRate))
+	err := binary.Write(buf, binary.BigEndian, buffer)
+	if err != nil {
+		fmt.Println("while converting buffer to binary", buf.Len(), err)
+		if !strm.errorTracker.Add() {
+			log.Println("too many errors, client is gone")
+			strm.Stop()
+		}
+		return
+	}
+
+	chkbuf := []float32{}
+	binary.Read(buf, binary.BigEndian, chkbuf)
+	log.Println("are the same?", reflect.DeepEqual(buffer, chkbuf))
+	log.Println("are the eql?", Equal(buffer, chkbuf))
+
+	log.Println("sending message")
+	err = strm.conn.WriteMessage(websocket.BinaryMessage, buf.Bytes())
+	if err != nil {
+		fmt.Println("while writing message to websocket", len(buffer), err)
+		if !strm.errorTracker.Add() {
+			log.Println("too many errors, client is gone")
+			strm.Stop()
+		}
+		return
+	}
+
+	strm.bytesTx += len(buffer)
+}
+
 func (strm *AudioStream) Start() {
 	log.Println("starting stream for", strm.ip)
 	buffer := make([]float32, SampleRate*1)
-	stream, err := portaudio.OpenDefaultStream(1, 0, SampleRate, len(buffer), func(in []float32) {
-		for i := range buffer {
-			buffer[i] = in[i]
-		}
-	})
+	stream, err := portaudio.OpenDefaultStream(1, 0, SampleRate, len(buffer), strm.sendData)
 
 	if err != nil {
 		panic(err)
@@ -64,40 +114,7 @@ func (strm *AudioStream) Start() {
 
 	defer strm.conn.Close()
 	strm.streaming = true
-	for {
-		select {
-		case <-strm.ctx.Done():
-			strm.streaming = false
-			log.Println("stream stopped for", strm.ip)
-			return
-		default:
-			time.Sleep(time.Second)
-
-			buf := bytes.NewBuffer(make([]byte, SampleRate))
-			err := binary.Write(buf, binary.BigEndian, buffer)
-			if err != nil {
-				fmt.Println("while converting buffer to binary", buf.Len(), err)
-				if !strm.errorTracker.Add() {
-					log.Println("too many errors, client is gone")
-					strm.Stop()
-				}
-				continue
-			}
-
-			log.Println("sending message")
-			err = strm.conn.WriteMessage(websocket.BinaryMessage, buf.Bytes())
-			if err != nil {
-				fmt.Println("while writing message to websocket", len(buffer), err)
-				if !strm.errorTracker.Add() {
-					log.Println("too many errors, client is gone")
-					strm.Stop()
-				}
-				continue
-			}
-
-			strm.bytesTx += len(buffer)
-		}
-	}
+	<-strm.ctx.Done()
 }
 
 func (strm *AudioStream) IsStreaming() bool {
