@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/gordonklaus/portaudio"
@@ -19,6 +20,7 @@ type Client struct {
 	CurrentAddress string
 	ConnectedAt    time.Time
 
+	connMu  *sync.Mutex
 	conn    *websocket.Conn
 	bytesRx int
 	cancel  func()
@@ -26,9 +28,12 @@ type Client struct {
 }
 
 func NewClient() *Client {
-	return &Client{
+	cl := &Client{
 		onError: func(err error) {},
+		connMu:  new(sync.Mutex),
 	}
+
+	return cl
 }
 
 func (cl *Client) BytesReceived() float64 {
@@ -45,7 +50,6 @@ func (cl *Client) Disconnect() {
 		cl.cancel()
 	}
 
-	cl.CurrentAddress = ""
 	cl.Connected = false
 }
 
@@ -55,6 +59,7 @@ func (cl *Client) ConnectedTo(address string) bool {
 
 func (cl *Client) ListenForAudio(ctx context.Context, conn *websocket.Conn) error {
 	cl.conn = conn
+	defer conn.Close()
 
 	log.Println("listening for audio from", cl.conn.RemoteAddr())
 
@@ -66,56 +71,76 @@ func (cl *Client) ListenForAudio(ctx context.Context, conn *websocket.Conn) erro
 		}
 	}()
 
-	buffer := make([]float32, SampleRate*1)
-	stream, err := portaudio.OpenDefaultStream(0, 1, SampleRate, len(buffer), func(out []float32) {
-		mtype, bindata, err := cl.conn.ReadMessage()
-		if err != nil {
-			log.Println("failed to read from WS:", err)
-			time.Sleep(time.Second / 5)
-			return
-		}
-
-		if mtype != websocket.BinaryMessage {
-			log.Println("ignoring non binary message")
-			return
-		}
-
-		cl.bytesRx += len(bindata)
-		fmt.Printf("received: %d bytes from %s\n", len(bindata), conn.RemoteAddr())
-
-		r := bytes.NewReader(bindata)
-		binary.Read(r, binary.BigEndian, &buffer)
-		for i := range out {
-			out[i] = buffer[i]
-		}
-	})
-
+	stream, err := portaudio.OpenDefaultStream(0, 1, SampleRate, SampleRate, cl.handleStream)
 	if err != nil {
 		log.Println("error when opening audio stream", err)
 		cl.Disconnect()
-
+		return nil
 	}
+	defer stream.Close()
 
 	if err := stream.Start(); err != nil {
 		log.Println("error when starting audio stream", err)
 		cl.Disconnect()
+		return nil
 	}
 
-	log.Println("after stream start")
-
-	defer stream.Close()
 	<-ctx.Done()
 	log.Println("stopped listening for audio")
 
 	return err
 }
 
+func (cl *Client) handleStream(out []float32) {
+	buffer := make([]float32, SampleRate*1)
+	mtype, bindata, err := cl.conn.ReadMessage()
+	if _, ok := err.(*websocket.CloseError); ok {
+		log.Println("connection was closed")
+		cl.Disconnect()
+		return
+	}
+
+	if err != nil {
+		log.Println("failed to read from WS:", err)
+		return
+	}
+
+	if mtype != websocket.BinaryMessage {
+		log.Println("ignoring non binary message")
+		return
+	}
+
+	cl.bytesRx += len(bindata)
+	log.Printf("received: %d bytes from %s\n", len(bindata), cl.conn.RemoteAddr())
+
+	r := bytes.NewReader(bindata)
+	if err := binary.Read(r, binary.BigEndian, &buffer); err != nil {
+		log.Println("failed to read the buffer from binary", err)
+		return
+	}
+
+	log.Println("buffer length ", len(buffer))
+
+	count := 0
+	for i := range out {
+		out[i] = buffer[i]
+		if buffer[i] == 0 {
+			count++
+		}
+	}
+
+	log.Println(count, " are zeros")
+}
+
 func (cl *Client) ConnectTo(address string) {
+	cl.connMu.Lock()
+	defer cl.connMu.Unlock()
+
 	fmt.Println("client connecting to", address)
 
 	log.Println("asking server to send us audio")
 	dialer := websocket.DefaultDialer
-	dialer.ReadBufferSize = SampleRate * 4
+	dialer.ReadBufferSize = SampleRate
 
 	conn, res, err := dialer.Dial("ws://"+address+":3456/connect", nil)
 	if err != nil {

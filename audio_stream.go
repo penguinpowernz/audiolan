@@ -48,7 +48,7 @@ func (strm *AudioStream) ConnectedSecs() float64 {
 }
 
 func (strm *AudioStream) Start() {
-
+	log.Println("starting stream for", strm.ip)
 	buffer := make([]float32, SampleRate*1)
 	stream, err := portaudio.OpenDefaultStream(1, 0, SampleRate, len(buffer), func(in []float32) {
 		for i := range buffer {
@@ -71,12 +71,12 @@ func (strm *AudioStream) Start() {
 			log.Println("stream stopped for", strm.ip)
 			return
 		default:
-			time.Sleep(time.Second / 5)
+			time.Sleep(time.Second)
 
-			buf := bytes.NewBuffer([]byte{})
+			buf := bytes.NewBuffer(make([]byte, SampleRate))
 			err := binary.Write(buf, binary.BigEndian, buffer)
 			if err != nil {
-				fmt.Println("while converting buffer to binary", len(buffer), err)
+				fmt.Println("while converting buffer to binary", buf.Len(), err)
 				if !strm.errorTracker.Add() {
 					log.Println("too many errors, client is gone")
 					strm.Stop()
