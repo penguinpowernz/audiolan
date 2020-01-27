@@ -1,7 +1,9 @@
 package audiolan
 
 import (
+	"context"
 	"log"
+	"net/http"
 	"strings"
 	"time"
 
@@ -11,11 +13,14 @@ import (
 type Server struct {
 	running bool
 	streams map[string]*AudioStream
+	api     *http.Server
 }
 
 func NewServer() *Server {
 	return &Server{streams: map[string]*AudioStream{}}
 }
+
+func (svr *Server) GetStreamFor(ip string) *AudioStream { return svr.streams[ip] }
 
 func (svr *Server) IsListening() bool { return svr.running }
 func (svr *Server) HasClient() bool   { return len(svr.streams) > 0 }
@@ -33,9 +38,9 @@ func (svr *Server) ClientConnectedAt() time.Time {
 }
 
 func (svr *Server) StartAPI(addr string) {
-	api := gin.Default()
+	r := gin.Default()
 
-	api.GET("/connect", func(c *gin.Context) {
+	r.GET("/connect", func(c *gin.Context) {
 		ip := strings.Split(c.Request.RemoteAddr, ":")[0]
 
 		if strm, found := svr.streams[ip]; found {
@@ -55,7 +60,7 @@ func (svr *Server) StartAPI(addr string) {
 		c.Status(200)
 	})
 
-	api.GET("/disconnect", func(c *gin.Context) {
+	r.GET("/disconnect", func(c *gin.Context) {
 		ip := strings.Split(c.Request.RemoteAddr, ":")[0]
 
 		if strm, found := svr.streams[ip]; found {
@@ -68,7 +73,14 @@ func (svr *Server) StartAPI(addr string) {
 		c.Status(200)
 	})
 
-	api.Run(addr)
+	svr.api = &http.Server{
+		Addr:    addr,
+		Handler: r,
+	}
+
+	if err := svr.api.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("listen: %s\n", err)
+	}
 }
 
 func (svr *Server) Start(addr string) {
@@ -83,5 +95,15 @@ func (svr *Server) Stop() {
 		log.Println("closing connection to", ip)
 		strm.Stop()
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second/2)
+	defer cancel()
+	if err := svr.api.Shutdown(ctx); err != nil {
+		log.Fatal("API stopped unexpectedly:", err)
+	}
+
+	<-ctx.Done()
+	log.Println("API stopped")
+
 	svr.running = false
 }

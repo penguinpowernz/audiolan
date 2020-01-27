@@ -24,19 +24,25 @@ func (sv *ServerView) Render() *fyne.Container {
 	txtPort.SetText(":3456")
 
 	btnConnect := widget.NewButton("Start", func() {})
+	updateButton := func() {
+		if sv.svr.IsListening() {
+			txtPort.SetReadOnly(true)
+			btnConnect.SetText("Stop")
+		} else {
+			btnConnect.SetText("Start")
+			txtPort.SetReadOnly(false)
+		}
+	}
 
 	btnConnect.OnTapped = func() {
 		if sv.svr.IsListening() {
 			log.Println("server is started, stopping")
 			sv.svr.Stop()
-			btnConnect.SetText("Start")
-			txtPort.SetReadOnly(false)
 		} else {
 			log.Println("not started, starting")
-			sv.svr.Start(txtPort.Text)
-			txtPort.SetReadOnly(true)
-			btnConnect.SetText("Stop")
+			go sv.svr.Start(txtPort.Text)
 		}
+		updateButton()
 	}
 
 	lblStatus := widget.NewLabel("No Client")
@@ -45,12 +51,18 @@ func (sv *ServerView) Render() *fyne.Container {
 	go func() {
 		rxkB := 0.0
 		secs := 0.0
+
 		for {
+			updateButton()
 			time.Sleep(time.Second)
+
 			if sv.svr.HasClient() {
-				lblStatus.SetText(fmt.Sprintf("Client: %s", sv.svr.ClientIP()))
-				rxkB += 44.1
-				secs = time.Since(sv.svr.ClientConnectedAt()).Seconds()
+				ip := sv.svr.ClientIP()
+				strm := sv.svr.GetStreamFor(ip)
+
+				lblStatus.SetText(fmt.Sprintf("Client: %s", ip))
+				rxkB = strm.BytesSent() / 1024
+				secs = strm.ConnectedSecs()
 			} else {
 				rxkB = 0.0
 				secs = 0.0
