@@ -1,13 +1,15 @@
 package audiolan
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"log"
-	"net"
-	"net/http"
-	"strings"
 	"time"
+
+	"github.com/gordonklaus/portaudio"
+	"github.com/gorilla/websocket"
 )
 
 const ClientRxPort = 3457
@@ -17,7 +19,7 @@ type Client struct {
 	CurrentAddress string
 	ConnectedAt    time.Time
 
-	conn    *net.UDPConn
+	conn    *websocket.Conn
 	bytesRx int
 	cancel  func()
 	onError func(err error)
@@ -51,64 +53,71 @@ func (cl *Client) ConnectedTo(address string) bool {
 	return cl.Connected && cl.CurrentAddress == address
 }
 
-func (cl *Client) ListenForAudio(ctx context.Context) error {
-	var err error
-	cl.conn, err = net.ListenUDP("udp", &net.UDPAddr{
-		Port: ClientRxPort,
-		IP:   net.ParseIP("0.0.0.0"),
-	})
+func (cl *Client) ListenForAudio(ctx context.Context, conn *websocket.Conn) error {
+	cl.conn = conn
 
-	if err != nil {
-		return err
-	}
+	log.Println("listening for audio from", cl.conn.RemoteAddr())
 
-	fmt.Printf("listening for audio at %s\n", cl.conn.LocalAddr().String())
-
-	go func() {
-		defer func() {
-			log.Println("closing client UDP listening port")
-			err := cl.conn.Close()
-			if err != nil {
-				log.Println("failed to cleanly close client UDP listening port:", err)
-			}
-		}()
-
-		for {
-			select {
-			case <-ctx.Done():
-				log.Println("stopped listening for audio")
-				return
-			default:
-				message := make([]byte, 20)
-				rlen, remote, err := cl.conn.ReadFromUDP(message[:])
-				if err != nil {
-					log.Println("failed to read from UDP port:", err)
-					time.Sleep(time.Second / 5)
-					continue
-				}
-
-				cl.bytesRx += rlen
-				data := strings.TrimSpace(string(message[:rlen]))
-				fmt.Printf("received: %s from %s\n", data, remote)
-			}
+	defer func() {
+		log.Println("closing client WS listening port")
+		err := cl.conn.Close()
+		if err != nil {
+			log.Println("failed to cleanly close client WS listening port:", err)
 		}
 	}()
 
-	return nil
+	buffer := make([]float32, SampleRate*1)
+	stream, err := portaudio.OpenDefaultStream(0, 1, SampleRate, len(buffer), func(out []float32) {
+		mtype, bindata, err := cl.conn.ReadMessage()
+		if err != nil {
+			log.Println("failed to read from WS:", err)
+			time.Sleep(time.Second / 5)
+			return
+		}
+
+		if mtype != websocket.BinaryMessage {
+			log.Println("ignoring non binary message")
+			return
+		}
+
+		cl.bytesRx += len(bindata)
+		fmt.Printf("received: %d bytes from %s\n", len(bindata), conn.RemoteAddr())
+
+		r := bytes.NewReader(bindata)
+		binary.Read(r, binary.BigEndian, &buffer)
+		for i := range out {
+			out[i] = buffer[i]
+		}
+	})
+
+	if err != nil {
+		log.Println("error when opening audio stream", err)
+		cl.Disconnect()
+
+	}
+
+	if err := stream.Start(); err != nil {
+		log.Println("error when starting audio stream", err)
+		cl.Disconnect()
+	}
+
+	log.Println("after stream start")
+
+	defer stream.Close()
+	<-ctx.Done()
+	log.Println("stopped listening for audio")
+
+	return err
 }
 
 func (cl *Client) ConnectTo(address string) {
 	fmt.Println("client connecting to", address)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cl.cancel = cancel
-	if err := cl.ListenForAudio(ctx); err != nil {
-		log.Println("failed to start listening for audio:", err)
-		return
-	}
-
 	log.Println("asking server to send us audio")
-	res, err := http.Get("http://" + address + ":3456/connect")
+	dialer := websocket.DefaultDialer
+	dialer.ReadBufferSize = SampleRate * 4
+
+	conn, res, err := dialer.Dial("ws://"+address+":3456/connect", nil)
 	if err != nil {
 		log.Println("failed to connect", err)
 
@@ -118,7 +127,7 @@ func (cl *Client) ConnectTo(address string) {
 		return
 	}
 
-	if res.StatusCode == 200 {
+	if res.StatusCode == 101 {
 		log.Println("connected successfully")
 	} else {
 		log.Println("failed to connect, got status code of", res.StatusCode)
@@ -129,4 +138,11 @@ func (cl *Client) ConnectTo(address string) {
 	cl.Connected = true
 	cl.CurrentAddress = address
 	cl.ConnectedAt = time.Now()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cl.cancel = cancel
+	if err := cl.ListenForAudio(ctx, conn); err != nil {
+		log.Println("failed to start listening for audio:", err)
+		return
+	}
 }

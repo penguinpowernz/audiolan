@@ -1,15 +1,15 @@
 package audiolan
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
 	"log"
-	"net"
-	"strconv"
 	"time"
 
 	"github.com/gordonklaus/portaudio"
+	"github.com/gorilla/websocket"
 )
 
 const SampleRate = 44100
@@ -19,35 +19,19 @@ type AudioStream struct {
 	connectedAt  time.Time
 	bytesTx      int
 	cancel       func()
-	conn         *net.UDPConn
+	conn         *websocket.Conn
 	ctx          context.Context
 	streaming    bool
 	errorTracker *rateTrack
 }
 
-func NewAudioStream(ip string) (*AudioStream, error) {
-	addr := ip + ":" + strconv.Itoa(ClientRxPort)
-
-	log.Println("transmitting audio to", addr)
-	clientAddr, err := net.ResolveUDPAddr("udp", addr)
-	if err != nil {
-		return nil, err
-	}
-
-	localAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
-	if err != nil {
-		return nil, err
-	}
-
-	conn, err := net.DialUDP("udp", localAddr, clientAddr)
-	if err != nil {
-		return nil, err
-	}
+func NewAudioStream(conn *websocket.Conn) (*AudioStream, error) {
+	log.Println("transmitting audio to", conn.RemoteAddr())
 
 	strm := new(AudioStream)
 	strm.conn = conn
 	strm.connectedAt = time.Now()
-	strm.ip = ip
+	strm.ip = conn.RemoteAddr().String()
 	strm.errorTracker = newRateTrack(5, 10*time.Second)
 
 	strm.ctx, strm.cancel = context.WithCancel(context.Background())
@@ -89,9 +73,21 @@ func (strm *AudioStream) Start() {
 		default:
 			time.Sleep(time.Second / 5)
 
-			err := binary.Write(strm.conn, binary.BigEndian, buffer)
+			buf := bytes.NewBuffer([]byte{})
+			err := binary.Write(buf, binary.BigEndian, buffer)
 			if err != nil {
-				fmt.Println(len(buffer), err)
+				fmt.Println("while converting buffer to binary", len(buffer), err)
+				if !strm.errorTracker.Add() {
+					log.Println("too many errors, client is gone")
+					strm.Stop()
+				}
+				continue
+			}
+
+			log.Println("sending message")
+			err = strm.conn.WriteMessage(websocket.BinaryMessage, buf.Bytes())
+			if err != nil {
+				fmt.Println("while writing message to websocket", len(buffer), err)
 				if !strm.errorTracker.Add() {
 					log.Println("too many errors, client is gone")
 					strm.Stop()

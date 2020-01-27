@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 )
 
 type Server struct {
@@ -47,7 +48,12 @@ func (svr *Server) StartAPI(addr string) {
 			strm.Stop()
 		}
 
-		strm, err := NewAudioStream(ip)
+		conn, err := websocket.Upgrade(c.Writer, c.Request, c.Writer.Header(), 1024, SampleRate)
+		if err != nil {
+			c.AbortWithError(500, err)
+		}
+
+		strm, err := NewAudioStream(conn)
 		if err != nil {
 			c.AbortWithError(500, err)
 			return
