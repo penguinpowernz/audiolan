@@ -4,6 +4,7 @@ import (
 	"flag"
 	"log"
 	"os"
+	"time"
 
 	"github.com/gordonklaus/portaudio"
 	"github.com/penguinpowernz/audiolan"
@@ -24,18 +25,18 @@ func main() {
 	portaudio.Initialize()
 	defer portaudio.Terminate()
 
-	if addr != "" {
-		client := audiolan.NewClient()
-		client.ConnectTo(addr)
+	switch {
+	case addr != "":
 		for {
+			client := audiolan.NewClient()
+			client.ConnectTo(addr)
+			time.Sleep(time.Second)
+		}
+
+	case serve:
+		for {
+			svr := audiolan.NewServer()
+			svr.Start("0.0.0.0:3456")
 		}
 	}
-
-	if serve {
-		svr := audiolan.NewServer()
-		svr.Start("0.0.0.0:3456")
-		for {
-		}
-	}
-
 }
