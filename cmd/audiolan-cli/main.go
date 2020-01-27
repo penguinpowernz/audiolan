@@ -21,7 +21,7 @@ func main() {
 	}
 
 	if addr != "" {
-		client := new(audiolan.Client)
+		client := audiolan.NewClient()
 		client.ConnectTo(addr)
 		for {
 		}

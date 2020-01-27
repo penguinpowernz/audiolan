@@ -22,7 +22,8 @@ type AudioStream struct {
 }
 
 func NewAudioStream(ip string) (*AudioStream, error) {
-	addr := ip + ":3456"
+	addr := ip + ":" + strconv.Itoa(ClientRxPort)
+
 	log.Println("transmitting audio to", addr)
 	clientAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
@@ -48,6 +49,14 @@ func NewAudioStream(ip string) (*AudioStream, error) {
 	strm.ctx, strm.cancel = context.WithCancel(context.Background())
 
 	return strm, nil
+}
+
+func (strm *AudioStream) BytesSent() float64 {
+	return float64(strm.bytesTx)
+}
+
+func (strm *AudioStream) ConnectedSecs() float64 {
+	return time.Since(strm.connectedAt).Seconds()
 }
 
 func (strm *AudioStream) Start() {

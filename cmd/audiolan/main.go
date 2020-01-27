@@ -11,8 +11,9 @@ func main() {
 	app := app.New()
 
 	w := app.NewWindow("AudioLAN")
-	client := new(audiolan.Client)
-	svr := new(audiolan.Server)
+
+	client := audiolan.NewClient()
+	svr := audiolan.NewServer()
 
 	w.SetContent(widget.NewTabContainer(
 		widget.NewTabItem("Client", views.NewClientView(client).Render()),
