@@ -3,6 +3,7 @@ package audiolan
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"strconv"
@@ -15,13 +16,13 @@ type AudioStream struct {
 	bytesTx      int
 	cancel       func()
 	conn         *net.UDPConn
-	errs         int
 	ctx          context.Context
 	streaming    bool
+	rdr          io.Reader
 	errorTracker *rateTrack
 }
 
-func NewAudioStream(ip string) (*AudioStream, error) {
+func NewAudioStream(ip string, r io.Reader) (*AudioStream, error) {
 	addr := ip + ":" + strconv.Itoa(ClientRxPort)
 
 	log.Println("transmitting audio to", addr)
@@ -45,6 +46,7 @@ func NewAudioStream(ip string) (*AudioStream, error) {
 	strm.connectedAt = time.Now()
 	strm.ip = ip
 	strm.errorTracker = newRateTrack(5, 10*time.Second)
+	strm.rdr = r
 
 	strm.ctx, strm.cancel = context.WithCancel(context.Background())
 
@@ -62,7 +64,6 @@ func (strm *AudioStream) ConnectedSecs() float64 {
 func (strm *AudioStream) Start() {
 	defer strm.conn.Close()
 	strm.streaming = true
-	i := 0
 	for {
 		select {
 		case <-strm.ctx.Done():
@@ -71,20 +72,19 @@ func (strm *AudioStream) Start() {
 			return
 		default:
 			time.Sleep(time.Second / 5)
-			msg := strconv.Itoa(i)
-			i++
-			buf := []byte(msg)
+			buf := make([]byte, 44100)
+			rn, _ := strm.rdr.Read(buf)
+			fmt.Println("read bytes", rn, string(buf[:rn]))
 			n, err := strm.conn.Write(buf)
 			strm.bytesTx += n
 			if err != nil {
-				fmt.Println(msg, err, strm.errs)
+				fmt.Println(string(buf), err)
 				if !strm.errorTracker.Add() {
 					log.Println("too many errors, client is gone")
 					strm.Stop()
 				}
 				continue
 			}
-			strm.errs = 0
 		}
 	}
 }
