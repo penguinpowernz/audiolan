@@ -12,8 +12,10 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// SampleRate is the sample rate used when reading or writing audio
 const SampleRate = 44100
 
+// AudioStream models a stream of audio across a websockets connection
 type AudioStream struct {
 	ip           string
 	connectedAt  time.Time
@@ -25,6 +27,7 @@ type AudioStream struct {
 	errorTracker *rateTrack
 }
 
+// NewAudioStream creates a new AudioStream over the given websockets connection
 func NewAudioStream(conn *websocket.Conn) (*AudioStream, error) {
 	log.Println("transmitting audio to", conn.RemoteAddr())
 
@@ -39,24 +42,14 @@ func NewAudioStream(conn *websocket.Conn) (*AudioStream, error) {
 	return strm, nil
 }
 
+// BytesSent will return how many bytes have been sent so far
 func (strm *AudioStream) BytesSent() float64 {
 	return float64(strm.bytesTx)
 }
 
+// ConnectedSecs returns how long the stream has been open for
 func (strm *AudioStream) ConnectedSecs() float64 {
 	return time.Since(strm.connectedAt).Seconds()
-}
-
-func Equal(a, b []float32) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i, v := range a {
-		if v != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func (strm *AudioStream) sendData(in []float32) {
@@ -100,6 +93,7 @@ func (strm *AudioStream) sendData(in []float32) {
 	strm.bytesTx += len(buffer)
 }
 
+// Start starts streaming audio across the websockets connection
 func (strm *AudioStream) Start() {
 	log.Println("starting stream for", strm.ip)
 	buffer := make([]float32, SampleRate*1)
@@ -116,10 +110,12 @@ func (strm *AudioStream) Start() {
 	<-strm.ctx.Done()
 }
 
+// IsStreaming returns true if the stream is currently streaming
 func (strm *AudioStream) IsStreaming() bool {
 	return strm.streaming
 }
 
+// Stop will stop the stream
 func (strm *AudioStream) Stop() {
 	if strm.cancel != nil {
 		strm.cancel()

@@ -1,36 +1,42 @@
 package audiolan
 
 import (
-	"context"
 	"log"
 	"net/http"
-	"strings"
 	"time"
-
-	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
 )
 
+// Server will answer client requests for audio and do whats needed
+// to provide audio to them
 type Server struct {
 	running bool
 	streams map[string]*AudioStream
 	api     *http.Server
 }
 
+// NewServer will create a new server
 func NewServer() *Server {
 	return &Server{streams: map[string]*AudioStream{}}
 }
 
+// GetStreamFor will return the AudioStream object for the given IP
 func (svr *Server) GetStreamFor(ip string) *AudioStream { return svr.streams[ip] }
 
+// IsListening will return true if the server is currently listening for requests
 func (svr *Server) IsListening() bool { return svr.running }
-func (svr *Server) HasClient() bool   { return len(svr.streams) > 0 }
+
+// HasClient will return true if there are any clients connected
+func (svr *Server) HasClient() bool { return len(svr.streams) > 0 }
+
+// ClientIP will return the IP of the first client
 func (svr *Server) ClientIP() string {
 	for ip := range svr.streams {
 		return ip
 	}
 	return ""
 }
+
+// ClientConnectedAt will return the connection time of the first client
 func (svr *Server) ClientConnectedAt() time.Time {
 	for _, s := range svr.streams {
 		return s.connectedAt
@@ -38,78 +44,20 @@ func (svr *Server) ClientConnectedAt() time.Time {
 	return time.Time{}
 }
 
-func (svr *Server) StartAPI(addr string) {
-	r := gin.Default()
-
-	r.GET("/connect", func(c *gin.Context) {
-		ip := strings.Split(c.Request.RemoteAddr, ":")[0]
-
-		if strm, found := svr.streams[ip]; found {
-			strm.Stop()
-		}
-
-		conn, err := websocket.Upgrade(c.Writer, c.Request, c.Writer.Header(), 1024, SampleRate)
-		if err != nil {
-			c.AbortWithError(500, err)
-		}
-
-		strm, err := NewAudioStream(conn)
-		if err != nil {
-			c.AbortWithError(500, err)
-			return
-		}
-
-		svr.streams[ip] = strm
-
-		go strm.Start()
-
-		c.Status(200)
-	})
-
-	r.GET("/disconnect", func(c *gin.Context) {
-		ip := strings.Split(c.Request.RemoteAddr, ":")[0]
-
-		if strm, found := svr.streams[ip]; found {
-			strm.Stop()
-		} else {
-			c.AbortWithStatus(404)
-			return
-		}
-
-		c.Status(200)
-	})
-
-	svr.api = &http.Server{
-		Addr:    addr,
-		Handler: r,
-	}
-
-	if err := svr.api.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("listen: %s\n", err)
-	}
-}
-
+// Start will start the server on the given address
 func (svr *Server) Start(addr string) {
 	log.Println("starting on", addr)
 	svr.running = true
-	svr.StartAPI(addr)
+	svr.startAPI(addr)
 }
 
+// Stop will stop the server
 func (svr *Server) Stop() {
 	log.Println("stopping")
 	for ip, strm := range svr.streams {
 		log.Println("closing connection to", ip)
 		strm.Stop()
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second/2)
-	defer cancel()
-	if err := svr.api.Shutdown(ctx); err != nil {
-		log.Fatal("API stopped unexpectedly:", err)
-	}
-
-	<-ctx.Done()
-	log.Println("API stopped")
-
+	svr.stopAPI()
 	svr.running = false
 }

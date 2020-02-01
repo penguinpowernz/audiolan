@@ -30,7 +30,7 @@ func (cv *ClientView) Render() *fyne.Container {
 
 	btnConnect := widget.NewButton("Connect", func() {})
 	updateButton := func() {
-		if cv.cl.ConnectedTo(cv.boxAddr.Text) {
+		if cv.cl.IsConnectedTo(cv.boxAddr.Text) {
 			cv.boxAddr.SetReadOnly(true)
 			btnConnect.SetText("Disconnect")
 		} else {
@@ -45,7 +45,7 @@ func (cv *ClientView) Render() *fyne.Container {
 			return
 		}
 
-		if cv.cl.ConnectedTo(cv.boxAddr.Text) {
+		if cv.cl.IsConnectedTo(cv.boxAddr.Text) {
 			log.Println("is connected, disconnecting")
 			cv.cl.Disconnect()
 		} else {

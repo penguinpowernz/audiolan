@@ -13,8 +13,11 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// ClientRxPort is the port that clients receive audio on
 const ClientRxPort = 3457
 
+// Client models and audiolan client that requests audio from a
+// remote server and plays it locally
 type Client struct {
 	Connected      bool
 	CurrentAddress string
@@ -27,6 +30,7 @@ type Client struct {
 	onError func(err error)
 }
 
+// NewClient will return a new client
 func NewClient() *Client {
 	cl := &Client{
 		onError: func(err error) {},
@@ -36,14 +40,60 @@ func NewClient() *Client {
 	return cl
 }
 
+// BytesReceived will return how many bytes have been recieved so far
 func (cl *Client) BytesReceived() float64 {
 	return float64(cl.bytesRx)
 }
 
+// OnError will register a callback that is given an error whenever
+// specific errors happen:
+// - when connecting to a remote server fails
 func (cl *Client) OnError(cb func(error)) {
 	cl.onError = cb
 }
 
+// ConnectTo will connect the client to the given address
+func (cl *Client) ConnectTo(address string) {
+	cl.connMu.Lock()
+	defer cl.connMu.Unlock()
+
+	fmt.Println("client connecting to", address)
+
+	log.Println("asking server to send us audio")
+	dialer := websocket.DefaultDialer
+	dialer.ReadBufferSize = SampleRate
+
+	conn, res, err := dialer.Dial("ws://"+address+":3456/connect", nil)
+	if err != nil {
+		log.Println("failed to connect", err)
+
+		go cl.onError(err)
+
+		cl.Disconnect()
+		return
+	}
+
+	if res.StatusCode == 101 {
+		log.Println("connected successfully")
+	} else {
+		log.Println("failed to connect, got status code of", res.StatusCode)
+		cl.Disconnect()
+		return
+	}
+
+	cl.Connected = true
+	cl.CurrentAddress = address
+	cl.ConnectedAt = time.Now()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cl.cancel = cancel
+	if err := cl.ListenForAudio(ctx, conn); err != nil {
+		log.Println("failed to start listening for audio:", err)
+		return
+	}
+}
+
+// Disconnect will close all connections and stop playing audio
 func (cl *Client) Disconnect() {
 	log.Println("client disconnecting")
 	if cl.cancel != nil {
@@ -53,10 +103,12 @@ func (cl *Client) Disconnect() {
 	cl.Connected = false
 }
 
-func (cl *Client) ConnectedTo(address string) bool {
+// IsConnectedTo will return if the client is connected to the given address
+func (cl *Client) IsConnectedTo(address string) bool {
 	return cl.Connected && cl.CurrentAddress == address
 }
 
+// ListenForAudio will start listening for audio coming over the websockets connection
 func (cl *Client) ListenForAudio(ctx context.Context, conn *websocket.Conn) error {
 	cl.conn = conn
 	defer conn.Close()
@@ -91,6 +143,8 @@ func (cl *Client) ListenForAudio(ctx context.Context, conn *websocket.Conn) erro
 	return err
 }
 
+// handleStream is the callback given to portaudio that decodes messages
+// from the websockets connection and passes them up
 func (cl *Client) handleStream(out []float32) {
 	buffer := make([]float32, SampleRate*1)
 	mtype, bindata, err := cl.conn.ReadMessage()
@@ -130,44 +184,4 @@ func (cl *Client) handleStream(out []float32) {
 	}
 
 	log.Println(count, " are zeros")
-}
-
-func (cl *Client) ConnectTo(address string) {
-	cl.connMu.Lock()
-	defer cl.connMu.Unlock()
-
-	fmt.Println("client connecting to", address)
-
-	log.Println("asking server to send us audio")
-	dialer := websocket.DefaultDialer
-	dialer.ReadBufferSize = SampleRate
-
-	conn, res, err := dialer.Dial("ws://"+address+":3456/connect", nil)
-	if err != nil {
-		log.Println("failed to connect", err)
-
-		go cl.onError(err)
-
-		cl.Disconnect()
-		return
-	}
-
-	if res.StatusCode == 101 {
-		log.Println("connected successfully")
-	} else {
-		log.Println("failed to connect, got status code of", res.StatusCode)
-		cl.Disconnect()
-		return
-	}
-
-	cl.Connected = true
-	cl.CurrentAddress = address
-	cl.ConnectedAt = time.Now()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cl.cancel = cancel
-	if err := cl.ListenForAudio(ctx, conn); err != nil {
-		log.Println("failed to start listening for audio:", err)
-		return
-	}
 }
