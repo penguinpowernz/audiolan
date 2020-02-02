@@ -6,6 +6,8 @@ use cases could be:
 * distributing audio to multiple slave Raspberry Pis
 * play audio from a PC with no speakers attached
 
+Binaries can be found in the releases section.
+
 ## Build
 
 To build, first need to install the Debian packages:
@@ -26,7 +28,7 @@ sudo apt-get install portaudio19-dev
 
 ### CLI
 
-Using the CLI version you can run the server like so on the computer whose default soudn output (read: speakers) you want to listen to remotely
+Using the CLI version you can run the server like so on the computer whose default sound output (read: speakers) you want to listen to remotely
 
 ```
 audiolan-cli -s
