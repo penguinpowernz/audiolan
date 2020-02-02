@@ -62,7 +62,7 @@ When running the UI version on the computer from which you want to listen:
 
 ## TODO
 
-- [x] fix stuttering/buffering issue
+- [ ] fix stuttering/buffering issue
 - [x] serve audio to single client
 - [ ] show multiple clients in the UI
 - [ ] make log available from the UI
