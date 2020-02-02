@@ -122,8 +122,7 @@ func (cl *Client) ListenForAudio(ctx context.Context, conn *websocket.Conn) erro
 			log.Println("failed to cleanly close client WS listening port:", err)
 		}
 	}()
-
-	stream, err := portaudio.OpenDefaultStream(0, 1, SampleRate, SampleRate, cl.handleStream)
+	stream, err := portaudio.OpenDefaultStream(0, 1, SampleRate, FrameLength, cl.handleStream)
 	if err != nil {
 		log.Println("error when opening audio stream", err)
 		cl.Disconnect()

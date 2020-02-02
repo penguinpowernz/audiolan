@@ -15,6 +15,9 @@ import (
 // SampleRate is the sample rate used when reading or writing audio
 const SampleRate = 44100
 
+// FrameLength is how many samples are sent in a single packet
+const FrameLength = SampleRate * 1
+
 // AudioStream models a stream of audio across a websockets connection
 type AudioStream struct {
 	ip           string
@@ -52,8 +55,9 @@ func (strm *AudioStream) ConnectedSecs() float64 {
 	return time.Since(strm.connectedAt).Seconds()
 }
 
+
 func (strm *AudioStream) sendData(in []float32) {
-	buffer := make([]float32, SampleRate*1)
+	buffer := make([]float32, FrameLength)
 	count := 0
 	for i := range buffer {
 		buffer[i] = in[i]
@@ -97,8 +101,8 @@ func (strm *AudioStream) sendData(in []float32) {
 func (strm *AudioStream) Start() {
 	log.Println("starting stream for", strm.ip)
 	buffer := make([]float32, SampleRate*1)
-	stream, err := portaudio.OpenDefaultStream(1, 0, SampleRate, len(buffer), strm.sendData)
 
+	stream, err := portaudio.OpenDefaultStream(1, 0, SampleRate, FrameLength, strm.sendData)
 	if err != nil {
 		panic(err)
 	}
