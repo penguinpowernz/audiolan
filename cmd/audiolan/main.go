@@ -1,6 +1,9 @@
 package main
 
 import (
+	"log"
+	"os"
+
 	"fyne.io/fyne/app"
 	"fyne.io/fyne/widget"
 	"github.com/gordonklaus/portaudio"
@@ -18,6 +21,13 @@ func main() {
 
 	client := audiolan.NewClient()
 	svr := audiolan.NewServer()
+
+	w.SetOnClosed(func() {
+		log.Println("closed")
+		svr.Stop()
+		client.Disconnect()
+		os.Exit(0)
+	})
 
 	w.SetContent(widget.NewTabContainer(
 		widget.NewTabItem("Client", views.NewClientView(client).Render()),
