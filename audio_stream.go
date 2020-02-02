@@ -78,10 +78,7 @@ func (strm *AudioStream) sendData(in []float32) {
 		return
 	}
 
-	// chkbuf := make([]float32, SampleRate*1)
-	// binary.Read(buf, binary.BigEndian, chkbuf)
-	// log.Println("are the same?", reflect.DeepEqual(buffer, chkbuf))
-	// log.Println("are the eql?", Equal(buffer, chkbuf))
+	// Verify(buffer, data)
 
 	log.Println("sending message")
 	err = strm.conn.WriteMessage(websocket.BinaryMessage, buf.Bytes())
