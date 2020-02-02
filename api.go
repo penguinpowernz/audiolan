@@ -28,6 +28,9 @@ func (svr *Server) startAPI(addr string) {
 }
 
 func (svr *Server) stopAPI() {
+	if svr.api == nil {
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second/2)
 	defer cancel()
 	if err := svr.api.Shutdown(ctx); err != nil {
