@@ -1,8 +1,28 @@
 # Audiolan
 
-A server and client to deliver audio playing the servers speakers to the clients speakers via websockets.
+A server and client to deliver audio playing the servers speakers to the clients speakers via websockets. Some
+use cases could be:
+
+* distributing audio to multiple slave Raspberry Pis
+* play audio from a PC with no speakers attached
+
+## Build
+
+To build, first need to install the Debian packages:
+
+    make reqs
+
+Then build:
+
+    make build
 
 ## Usage
+
+To run the app the following package needs to be installed:
+
+```
+sudo apt-get install portaudio19-dev
+```
 
 ### CLI
 
@@ -36,8 +56,10 @@ When running the UI version on the computer from which you want to listen:
 
 ## TODO
 
-- [] fix stuttering/buffering issue
+- [x] fix stuttering/buffering issue
 - [x] serve audio to single client
 - [] show multiple clients in the UI
 - [] make log available from the UI
 - [] authentication
+- [] test on Windows
+- [] test on MacOS
