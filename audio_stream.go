@@ -69,6 +69,9 @@ func (strm *AudioStream) sendData(in []float32) {
 
 	buf := bytes.NewBuffer(make([]byte, SampleRate))
 	err := binary.Write(buf, binary.BigEndian, buffer)
+	if count == len(buffer) {
+		return
+	}
 	if err != nil {
 		fmt.Println("while converting buffer to binary", buf.Len(), err)
 		if !strm.errorTracker.Add() {
