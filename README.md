@@ -57,7 +57,7 @@ When running the UI version on the computer from which you want to listen:
 ![](https://raw.githubusercontent.com/penguinpowernz/audiolan/master/client.png)
 
 1. choose the **Client** tab
-2. enter the IP and port number to listen to (e.g. 192.168.1.100:4567)
+2. enter the IP and port number to listen to (e.g. 192.168.1.100:3456)
 3. click the **Connect** button to start listening to audio
 
 ## TODO
