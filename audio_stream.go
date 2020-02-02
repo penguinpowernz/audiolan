@@ -55,6 +55,7 @@ func (strm *AudioStream) ConnectedSecs() float64 {
 	return time.Since(strm.connectedAt).Seconds()
 }
 
+	buf := bytes.NewBuffer([]byte{})
 
 func (strm *AudioStream) sendData(in []float32) {
 	buffer := make([]float32, FrameLength)
@@ -67,7 +68,6 @@ func (strm *AudioStream) sendData(in []float32) {
 	}
 	log.Println(count, " are zeros")
 
-	buf := bytes.NewBuffer(make([]byte, SampleRate))
 	err := binary.Write(buf, binary.BigEndian, buffer)
 	if count == len(buffer) {
 		return
